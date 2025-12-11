@@ -23,22 +23,27 @@ max = number
 (def parse
   (i/parser grammar :output-format :enlive))
 
-(defn get-lower-bound [s]
+(defn get-lower-bound [s])
+(let [s "25024"]
   (b/cond
-    :let [s-count (count s)
-          n (parse-long s)]
-    (< n 11) 1
-    (odd? s-count) (let [up (->> s-count (math/pow 10) long)
-                         div (->> (/ (inc s-count) 2)
-                                  (math/pow 10)
-                                  long)
-                         ;; _ (def-dev foobar2 up div)
-                         ]
-                     (/ up div))
-    :let [half (/ s-count 2)
+    :let [c (count s)
+          n (parse-long s)
+          mehdi (cond-> (->> 1000 math/log10 math/floor inc long)
+                  odd? inc)
+          dam (cond-> (math/floor-div 5 2)
+                odd? inc)
+          ]
+    #_#_(odd? c) (let [up (->> s-count (math/pow 10) long)
+                             div (->> (/ (inc s-count) 2)
+                                      (math/pow 10)
+                                      long)
+                             ;; _ (def-dev foobar2 up div)
+                             ]
+                         (/ up div))
+    :let [half (/ c 2)
           pref-int (parse-long (subs s 0 half))
           suf-int (parse-long (subs s half))
-          ;; _ (def-dev foobar prefix suffix pref-int suf-int)
+          _ (def-dev foobar c n mehdi dam)
           ]
     (<= suf-int pref-int) pref-int
     :else (inc pref-int)))
@@ -63,22 +68,22 @@ max = number
     (< suf-int pref-int) (dec pref-int)
     :else pref-int))
 
-(let [input-data (->> (parse text-input)
-                      (s/select [:content s/ALL map? :content
-                                 (s/subselect s/ALL map? :content s/ALL :content)])
-                      (s/transform [s/ALL s/ALL] (partial apply str)))]
-  (defn solve-part-1 []
-    (->> input-data
-         (transduce
+(defn solve-part-1 [input])
+(let [input text-input]
+  (->> (parse input)
+       (s/select [:content s/ALL map? :content
+                    (s/subselect s/ALL map? :content s/ALL :content)])
+       (s/transform [s/ALL s/ALL] (partial apply str))
+       (into [] ;;transduce
            (comp
-             (map (fn [[min max]]
+             (map (fn [[min max :as _n]]
                     [(get-lower-bound min) (get-upper-bound max)]))
-             (filter (fn [[lower upper]]
+             #_(filter (fn [[lower upper]]
                        (<= lower upper)))
-             (mapcat (fn [[lower upper]]
+             #_(mapcat (fn [[lower upper]]
                        (range lower (inc upper))))
-             (map #(-> (str % %) parse-long)))
-           +))))
+             #_(map #(-> (str % %) parse-long)))
+           #_+)))
 
 (comment
 
