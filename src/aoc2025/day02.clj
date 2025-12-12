@@ -6,6 +6,7 @@
             [clojure.string :as str]
             [clojure.tools.namespace.repl :as nst]
             [com.rpl.specter :as s]
+            [criterium.core :as c]
             [instaparse.core :as i]))
 
 (def text-input
@@ -62,25 +63,28 @@ max = number
     (< suf-int pref-int) (dec pref-int)
     :else pref-int))
 
-(defn solve-part-1 [input]
-  (->> (parse input)
-       (s/select [:content s/ALL map? :content
-                  (s/subselect s/ALL map? :content s/ALL :content)])
-       (s/transform [s/ALL s/ALL] (partial apply str))
-       (transduce
-         (comp
-           (map (fn [[min max]]
-                  [(get-lower-bound min) (get-upper-bound max)]))
-           (filter (fn [[lower upper]]
-                     (<= lower upper)))
-           (mapcat (fn [[lower upper]]
-                     (range lower (inc upper))))
-           (map #(-> (str % %) parse-long)))
-         +)))
+(let [input-data (->> (parse text-input)
+                      (s/select [:content s/ALL map? :content
+                                 (s/subselect s/ALL map? :content s/ALL :content)])
+                      (s/transform [s/ALL s/ALL] (partial apply str)))]
+  (defn solve-part-1 []
+    (->> input-data
+         (transduce
+           (comp
+             (map (fn [[min max]]
+                    [(get-lower-bound min) (get-upper-bound max)]))
+             (filter (fn [[lower upper]]
+                       (<= lower upper)))
+             (mapcat (fn [[lower upper]]
+                       (range lower (inc upper))))
+             (map #(-> (str % %) parse-long)))
+           +))))
 
 (comment
 
-  (solve-part-1 text-input)
+  (solve-part-1 #_text-input)
+
+  (c/bench (solve-part-1))
 
   (nst/refresh)
 
