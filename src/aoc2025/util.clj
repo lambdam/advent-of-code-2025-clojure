@@ -14,3 +14,9 @@
     foo bar)
 
   )
+
+(defmacro print-vals [& syms]
+  (let [hm (->> syms
+                (map #(do [(keyword %) %]))
+                (into {}))]
+    `(println ~hm)))
