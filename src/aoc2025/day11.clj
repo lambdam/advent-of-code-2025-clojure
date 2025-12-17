@@ -9,21 +9,40 @@
             [clojure.walk :as walk]
             [com.rpl.specter :as s]
             [datomic.api :as d]
-            [instaparse.core :as i])
-  (:import [java.util.concurrent Executors]))
+            [instaparse.core :as i]))
 
-(def text-input
-  (-> "day11.input.txt" io/resource slurp str/trim))
+(comment
+
+  1
+  :foo
+  "foo"
+  {:foo 1}
+  [:foo :bar]
+  #{:foo :bar}
+
+  (+ 1 2 3 4)
+
+  (+ 1 (* 2 3))
+
+  )
+
+;; Local state
 
 (def init-state
   {:parsed-input nil
    :src->dst nil
+   :dst->src nil
    :conn nil})
 
 (defonce *state
   (atom init-state))
 
 (comment (reset! *state init-state))
+
+;; Input parsing
+
+(def text-input
+  (-> "day11.input.txt" io/resource slurp str/trim))
 
 (def grammar "
 S = link {newline link}
@@ -110,7 +129,7 @@ destination = device
           :else (recur (inc iteration) cnt' next-paths' path-seq'))))
     :path-seq
     ;; (map count)
-    (map-indexed (fn [index set]
+    #_(map-indexed (fn [index set]
                    [index (not-empty (set/intersection set #{:dac :fft}))])))
 
   (def map-steps
@@ -135,10 +154,7 @@ destination = device
           :let [total-counts' (conj total-counts next-counts)]
           :else (recur (inc iteration) next-counts total-counts')))))
 
-  (count steps)
-  (count map-steps)
-
-  (= steps
+  #_(= steps
      (->> map-steps
           (mapv #(-> % keys set))))
 
@@ -147,6 +163,7 @@ destination = device
 
   )
 
+;; Reverse the adjacency matrix... with Datomic
 
 (def db-uri "datomic:mem://aoc-2025-day-11")
 
@@ -176,7 +193,7 @@ destination = device
   (vec (d/datoms (get-db!) :eavt))
   )
 
-(defn transact-devices! [conn src->dst]
+(defn transact-devices! [{:keys [conn src->dst]}]
   (letfn [(to-tempid [kwd]
             (str (name kwd) "-tempid"))]
     (-> src->dst
@@ -191,66 +208,25 @@ destination = device
 
 (comment
 
-  (let [{:keys [conn src->dst]} @*state]
-    (transact-devices! conn src->dst))
+  (transact-devices! @*state)
 
-  (swap! *state assoc :dst->src
-         (->> (d/q '[:find ?dst-kwd ?src-kwd
-                     :where
-                     [?src :node/relates-to ?dst]
-                     [?src :node/name  ?src-kwd]
-                     [?dst :node/name ?dst-kwd]
-                     ]
-                   (get-db!))
-              (reduce (fn [acc [k v]]
-                        (update acc k (fnil #(conj % v) [])))
-                      {})))
+  (let [db (get-db!)]
+    (->> (d/datoms (get-db!) :eavt)
+         (mapv (fn [{:keys [e a v]}]
+                 [e (d/ident db a) v]))))
+
+  (->> (d/q '[:find ?dst-kwd (distinct ?src-kwd)
+              :where
+              [?src :node/relates-to ?dst]
+              [?src :node/name  ?src-kwd]
+              [?dst :node/name ?dst-kwd]
+              ]
+            (get-db!))
+       (into {} (map (juxt first (comp vec second))))
+       (swap! *state assoc :dst->src)
+       )
 
   (:dst->src @*state)
-
-  (time
-    (let [{:keys [dst->src]} @*state
-          start :fft
-          end :svr
-          max-depth 1000]
-      (letfn [(follow-next-devices [{:keys [device] :as m}]
-                (apply + (for [device' (get dst->src device)]
-                           (check-device (assoc m :device device')))))
-              (check-device [{:keys [device depth] :as m}]
-                (cond
-                  (= depth max-depth) (throw (Exception. "Max depth"))
-                  (= end device) 1
-                  :else (follow-next-devices (assoc m :depth (inc depth)))))]
-        (check-device {:device start
-                       :depth 0}))))
-
-  (time
-    (let [{:keys [dst->src]} @*state
-          start :fft
-          end :svr
-          max-depth 1000]
-      (letfn [(follow-next-devices [device depth]
-                (apply + (for [device' (get dst->src device)]
-                           (check-device device' depth))))
-              (check-device [device depth]
-                (cond
-                  (= depth max-depth) (throw (Exception. "Max depth"))
-                  (= end device) 1
-                  :else (follow-next-devices device (inc depth))))]
-        (check-device start 0))))
-
-  (time
-    (let [{:keys [dst->src]} @*state
-          start :fft
-          end :svr]
-      (letfn [(follow-next-devices [device]
-                (apply + (for [device' (get dst->src device)]
-                           (check-device device'))))
-              (check-device [device]
-                (if (= end device)
-                  1
-                  (follow-next-devices device)))]
-        (check-device start))))
 
   )
 
@@ -260,7 +236,7 @@ destination = device
                        (check-device device' depth))))
           (check-device [device depth]
             (cond
-              (= depth max-depth) 0 ;; (throw (Exception. "Max depth"))
+              (= depth max-depth) 0
               (= end device) 1
               :else (follow-next-devices device (inc depth))))]
     (check-device start 0)))
