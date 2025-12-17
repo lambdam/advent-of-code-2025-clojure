@@ -1,9 +1,10 @@
 {:paths ["src" "resources"]
  :deps {better-cond/better-cond {:mvn/version "2.1.5"}
+        com.datomic/peer {:mvn/version "1.0.7469"}
         com.rpl/specter {:mvn/version "1.1.6"}
         criterium/criterium {:mvn/version "0.4.6"}
-        com.datomic/peer {:mvn/version "1.0.7469"}
         instaparse/instaparse {:mvn/version "1.5.0"}
+        metosin/malli {:mvn/version "0.20.0"}
         org.clojure/clojure {:mvn/version "1.12.3"}
         org.clojure/tools.namespace {:mvn/version "1.5.0"}}
  :aliases

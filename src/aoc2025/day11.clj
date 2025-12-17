@@ -2,13 +2,14 @@
   (:require [aoc2025.util :as util]
             [better-cond.core :as b]
             [clojure.java.io :as io]
+            [clojure.math :as math]
             [clojure.pprint :as pp]
+            [clojure.set :as set]
             [clojure.string :as str]
             [clojure.walk :as walk]
             [com.rpl.specter :as s]
-            [instaparse.core :as i]
-            [clojure.set :as set]
-            [clojure.math :as math])
+            [datomic.api :as d]
+            [instaparse.core :as i])
   (:import [java.util.concurrent Executors]))
 
 (def text-input
@@ -16,7 +17,8 @@
 
 (def init-state
   {:parsed-input nil
-   :src->dst nil})
+   :src->dst nil
+   :conn nil})
 
 (defonce *state
   (atom init-state))
@@ -84,7 +86,7 @@ destination = device
 (comment
 
   ;; Steps
-  (def steps)
+  ;; (def steps)
   (->>
     (let [{:keys [src->dst]} @*state
           max-iter 10000
@@ -135,11 +137,173 @@ destination = device
 
   (count steps)
   (count map-steps)
+
   (= steps
      (->> map-steps
           (mapv #(-> % keys set))))
 
   (->> map-steps
        (mapv #(select-keys % [:fft :dac])))
+
+  )
+
+
+(def db-uri "datomic:mem://aoc-2025-day-11")
+
+(defn get-db! []
+  (let [conn (:conn @*state)]
+    (assert conn)
+    (d/db conn)))
+
+(defn transact-idents [conn]
+  @(d/transact conn [{:db/ident :node/name
+                      :db/valueType :db.type/keyword
+                      :db/cardinality :db.cardinality/one
+                      :db/unique :db.unique/identity}
+                     {:db/ident :node/relates-to
+                      :db/valueType :db.type/ref
+                      :db/cardinality :db.cardinality/many}]))
+
+(comment
+  (do (d/create-database db-uri)
+      (let [conn (d/connect db-uri)]
+        (swap! *state assoc :conn conn)
+        (transact-idents conn)))
+  (d/delete-database db-uri)
+  @*state
+  (swap! *state assoc :conn nil)
+  (get-db!)
+  (vec (d/datoms (get-db!) :eavt))
+  )
+
+(defn transact-devices! [conn src->dst]
+  (letfn [(to-tempid [kwd]
+            (str (name kwd) "-tempid"))]
+    (-> src->dst
+        (->> (mapcat (fn [[src dests]]
+                       (let [tempid (to-tempid src)]
+                         (into [[:db/add tempid :node/name src]]
+                               (for [dest dests]
+                                 [:db/add tempid :node/relates-to (to-tempid dest)]))))))
+        (conj [:db/add (to-tempid :out) :node/name :out])
+        (->> (d/transact conn))
+        deref)))
+
+(comment
+
+  (let [{:keys [conn src->dst]} @*state]
+    (transact-devices! conn src->dst))
+
+  (swap! *state assoc :dst->src
+         (->> (d/q '[:find ?dst-kwd ?src-kwd
+                     :where
+                     [?src :node/relates-to ?dst]
+                     [?src :node/name  ?src-kwd]
+                     [?dst :node/name ?dst-kwd]
+                     ]
+                   (get-db!))
+              (reduce (fn [acc [k v]]
+                        (update acc k (fnil #(conj % v) [])))
+                      {})))
+
+  (:dst->src @*state)
+
+  (time
+    (let [{:keys [dst->src]} @*state
+          start :fft
+          end :svr
+          max-depth 1000]
+      (letfn [(follow-next-devices [{:keys [device] :as m}]
+                (apply + (for [device' (get dst->src device)]
+                           (check-device (assoc m :device device')))))
+              (check-device [{:keys [device depth] :as m}]
+                (cond
+                  (= depth max-depth) (throw (Exception. "Max depth"))
+                  (= end device) 1
+                  :else (follow-next-devices (assoc m :depth (inc depth)))))]
+        (check-device {:device start
+                       :depth 0}))))
+
+  (time
+    (let [{:keys [dst->src]} @*state
+          start :fft
+          end :svr
+          max-depth 1000]
+      (letfn [(follow-next-devices [device depth]
+                (apply + (for [device' (get dst->src device)]
+                           (check-device device' depth))))
+              (check-device [device depth]
+                (cond
+                  (= depth max-depth) (throw (Exception. "Max depth"))
+                  (= end device) 1
+                  :else (follow-next-devices device (inc depth))))]
+        (check-device start 0))))
+
+  (time
+    (let [{:keys [dst->src]} @*state
+          start :fft
+          end :svr]
+      (letfn [(follow-next-devices [device]
+                (apply + (for [device' (get dst->src device)]
+                           (check-device device'))))
+              (check-device [device]
+                (if (= end device)
+                  1
+                  (follow-next-devices device)))]
+        (check-device start))))
+
+  )
+
+(defn count-routes [{:keys [d->ds start end max-depth]}]
+  (letfn [(follow-next-devices [device depth]
+            (apply + (for [device' (get d->ds device)]
+                       (check-device device' depth))))
+          (check-device [device depth]
+            (cond
+              (= depth max-depth) 0 ;; (throw (Exception. "Max depth"))
+              (= end device) 1
+              :else (follow-next-devices device (inc depth))))]
+    (check-device start 0)))
+
+(comment
+
+  ;; svr -> fft
+
+  (count-routes {:d->ds (:dst->src @*state)
+                 :start :fft
+                 :end :svr
+                 :max-depth 12})
+
+  7180
+
+  ;; fft -> dac
+
+  (def inter-result
+    (future
+      (count-routes {:d->ds (:dst->src @*state)
+                     :start :dac
+                     :end :fft
+                     :max-depth 17})))
+
+  inter-result
+
+  {15 1218656
+   16 4003876
+   17 5553940
+   18 5553940
+   19 5553940}
+
+  ;; dac -> out
+
+  (count-routes {:d->ds (:src->dst @*state)
+                 :start :dac
+                 :end :out
+                 :max-depth 11})
+
+  {11 13391
+   12 13391
+   13 13391}
+
+  (* 7180 5553940 13391) ;; => 533996779677200
 
   )

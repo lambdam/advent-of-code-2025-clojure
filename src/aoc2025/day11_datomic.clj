@@ -1,4 +1,4 @@
-(ns aoc2025.day11
+(ns aoc2025.day11-datomic
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [com.rpl.specter :as s]
