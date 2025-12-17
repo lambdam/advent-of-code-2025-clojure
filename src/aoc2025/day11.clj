@@ -6,7 +6,10 @@
             [clojure.string :as str]
             [clojure.walk :as walk]
             [com.rpl.specter :as s]
-            [instaparse.core :as i]))
+            [instaparse.core :as i]
+            [clojure.set :as set]
+            [clojure.math :as math])
+  (:import [java.util.concurrent Executors]))
 
 (def text-input
   (-> "day11.input.txt" io/resource slurp str/trim))
@@ -74,4 +77,69 @@ destination = device
 
 (comment
   (-> @*state :src->dst solve-day-11-part-1)
+  )
+
+;; Part 2
+
+(comment
+
+  ;; Steps
+  (def steps)
+  (->>
+    (let [{:keys [src->dst]} @*state
+          max-iter 10000
+          start :svr
+          end :out]
+      (loop [iteration 0
+             cnt 0
+             paths #{start}
+             path-seq [#{start}]]
+        (b/cond
+          (= iteration max-iter) ::error
+          (empty? paths) {:cnt cnt
+                          :iterations iteration
+                          :path-seq path-seq}
+          :let [next-paths (into #{} (mapcat src->dst) paths)
+                path-seq' (conj path-seq next-paths)
+                cnt' (if (contains? next-paths end)
+                       (inc cnt)
+                       cnt)
+                next-paths' (disj next-paths end)]
+          :else (recur (inc iteration) cnt' next-paths' path-seq'))))
+    :path-seq
+    ;; (map count)
+    (map-indexed (fn [index set]
+                   [index (not-empty (set/intersection set #{:dac :fft}))])))
+
+  (def map-steps
+    (let [{:keys [src->dst]} @*state
+          max-iter 10000
+          start :svr
+          end :out]
+      (loop [iteration 0
+             previous-counts {start 1}
+             total-counts [{start 1}]]
+        (b/cond
+          (= iteration max-iter) ::error
+          :let [next-counts (reduce (fn [acc [device _]]
+                                      (let [next-devices (get src->dst device)]
+                                        (reduce (fn [acc' next-device]
+                                                  (update acc' next-device (fnil inc 0)))
+                                                acc
+                                                next-devices)))
+                                    {}
+                                    previous-counts)]
+          (empty? next-counts) total-counts
+          :let [total-counts' (conj total-counts next-counts)]
+          :else (recur (inc iteration) next-counts total-counts')))))
+
+  (count steps)
+  (count map-steps)
+  (= steps
+     (->> map-steps
+          (mapv #(-> % keys set))))
+
+  (->> map-steps
+       (mapv #(select-keys % [:fft :dac])))
+
   )

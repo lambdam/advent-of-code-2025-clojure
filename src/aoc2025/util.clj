@@ -1,6 +1,10 @@
 (ns aoc2025.util)
 
-(defmacro def-dev [name & syms]
+(defmacro def-syms [& syms]
+  `(do ~@(for [sym syms]
+           `(def ~sym ~sym))))
+
+(defmacro def-map [name & syms]
   (let [hm (->> syms
                 (map #(do [(keyword %) %]))
                 (into {}))]
@@ -15,8 +19,7 @@
 
   )
 
-(defmacro print-vals [& syms]
-  (let [hm (->> syms
-                (map #(do [(keyword %) %]))
-                (into {}))]
-    `(println ~hm)))
+(defmacro vals-to-map [& syms]
+  (->> syms
+       (map #(do [(keyword %) %]))
+       (into {})))
